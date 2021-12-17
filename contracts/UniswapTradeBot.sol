@@ -7,7 +7,7 @@ import './interfaces/IUniswapV2Pair.sol';
 import './interfaces/IUniswapV2Factory.sol';
 import './interfaces/IERC20.sol';
 
-contract TradeBot {
+contract UniswapTradeBot {
 	address public factory; // central hub of UniSwap ecosystem that provides info about liquidity pools
 	uint constant deadline = 10 days; // Date the trade is due
   	IUniswapV2Router02 public sushiRouter; // Central smart contract in the SushiSwap ecosystem that is used to trade in liquidity pools
@@ -19,6 +19,10 @@ contract TradeBot {
 		sushiRouter = IUniswapV2Router02(_sushiRouter)
 		owner = msg.sender;
 	}
+
+	/*=============================================================================================================================================================================================
+	UNISWAP FLASHLOANS
+	=============================================================================================================================================================================================*/
 
 	/*
 		token0 - Token we will borrow (i.e. DAI)
