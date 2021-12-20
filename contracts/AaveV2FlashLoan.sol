@@ -1,4 +1,5 @@
 pragma solidity ^0.6.6;
+// SPDX-License-Identifier: MIT
 
 import { FlashLoanReceiverBase } from "../interfaces/FlashLoanReceiverBase.sol";
 import { ILendingPool } from "../interfaces/ILendingPool.sol";
@@ -19,6 +20,7 @@ interface KyberNetworkProxy {
 contract AaveV2FlashLoan is FlashLoanReceiverBase {
     IUniswapV2Router02 public sushiRouter;
     KyberNetworkProxy public kyberRouter;
+    uint private asset0Received;
     uint constant deadline = 10 days; // Date the trade is due
     ILendingPoolAddressesProvider provider;
 
@@ -62,10 +64,10 @@ contract AaveV2FlashLoan is FlashLoanReceiverBase {
         // Exchange Asset1 for Asset0 (i.e. Sell ETH for DAI here; like ETH could be 1010 DAI here)
         if(keccak256(abi.encodePacked(exchangeB)) == keccak256(abi.encodePacked("sushi"))) {
             // Run swap for asset[0] with SushiSwap
-            uint asset0Received = sushiRouter.swapExactTokensForTokens(amounts[1], amounts[0], assets, address(this), deadline)[0]; // Get Asset0 (i.e. DAI) in return
+            asset0Received = sushiRouter.swapExactTokensForTokens(amounts[1], amounts[0], assets, address(this), deadline)[0]; // Get Asset0 (i.e. DAI) in return
         } else if(keccak256(abi.encodePacked(exchangeB)) == keccak256(abi.encodePacked("kyber"))) {
             // Run swap for asset[0] with Kyber
-            uint asset0Received = kyberRouter.swapTokenToToken(IERC20(assets[1]), amounts[1], IERC20(assets[0]), amounts[0]);
+            asset0Received = kyberRouter.swapTokenToToken(IERC20(assets[1]), amounts[1], IERC20(assets[0]), amounts[0]);
         }
 
         // At the end of your logic above, this contract owes
@@ -120,20 +122,20 @@ contract AaveV2FlashLoan is FlashLoanReceiverBase {
         );
     }
 
-    function withdrawToken(address _tokenContract, uint256 _amount) external {
+    function withdrawToken(address _tokenContract, uint256 _amount) public {
         require(msg.sender == owner, "Unauthorized");
         IERC20 tokenContract = IERC20(_tokenContract);
 
         // transfer the token from address of this contract
         // to address of the user (executing the withdrawToken() function)
         uint256 balance = IERC20(_tokenContract).balanceOf(address(this));
-        IERC20(_tokenAddress).transfer(owner, balance);
+        IERC20(_tokenContract).transfer(owner, balance);
     }
      // KEEP THIS FUNCTION IN CASE THE CONTRACT KEEPS LEFTOVER ETHER!
-    function withdrawEther() {
+    function withdrawEther() public {
         require(msg.sender == owner, "Unauthorized");
         address self = address(this); // workaround for a possible solidity bug
         uint256 balance = self.balance;
-        address(owner).transfer(balance);
+        owner.transfer(balance);
     }
 }
