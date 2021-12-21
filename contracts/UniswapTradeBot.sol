@@ -6,7 +6,7 @@ import './UniswapV2Library.sol';
 import '../interfaces/IUniswapV2Router02.sol';
 import '../interfaces/IUniswapV2Pair.sol';
 import '../interfaces/IUniswapV2Factory.sol';
-import '../interfaces/IERC20.sol';
+import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
 contract UniswapTradeBot {
 	address public factory; // central hub of UniSwap ecosystem that provides info about liquidity pools
@@ -50,7 +50,7 @@ contract UniswapTradeBot {
 		amountRequired - The amount of the initial loan that must be reimbursed for the Flash loan to UniSwap
 		Description: Borrow DAI on Uni -> Exchange DAI for ETH on Sushi -> Sell ETH for DAI on Uni
 	*/
-	function uniswapV2Call(address _sender, uint _amount0, uint _amount1, bytes calldata _data) external {
+	function uniswapV2Call(address _sender, uint _amount0, uint _amount1) external {
 	    address[] memory path = new address[](2);
 	    uint amountToken = _amount0 == 0 ? _amount1 : _amount0; // One of the amounts are 0, the other amount is what we want to borrow.
 
@@ -85,9 +85,8 @@ contract UniswapTradeBot {
 	    otherToken.transfer(_sender, amountReceived - amountRequired); // Keep Profit in ETH
   	}
 
-  	function withdrawToken(address _tokenContract, uint256 _amount) public {
+  	function withdrawToken(address _tokenContract) public {
   		require(msg.sender == owner, "Unauthorized");
-        IERC20 tokenContract = IERC20(_tokenContract);
 
         // transfer the token from address of this contract
         // to address of the user (executing the withdrawToken() function)
