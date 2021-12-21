@@ -8,3 +8,6 @@ logs
 examples/*
 examples
 build/*
+artifacts/*
+cache/*
+package-lock.json
