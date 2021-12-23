@@ -40,7 +40,8 @@ const app = express();
 const server = http.createServer(app).listen(PORT, () => console.log(`Listening on ${ PORT }`))
 
 // Web3 CONFIG
-const web3 = new Web3(process.env.RPC_URL)
+const { createAlchemyWeb3 } = require("@alch/alchemy-web3");
+const web3 = createAlchemyWeb3(process.env.RPC_URL)
 
 // Exchanges
 UNISWAP = "uniswap"
@@ -85,9 +86,9 @@ async function checkPair(args) {
   var new_record = [{
     inputtoken: inputTokenSymbol, 
     outputtoken: outputTokenSymbol, 
+    inputamount: input_amount,
     inputTokenAddress: inputTokenAddress,
     outputTokenAddress: outputTokenAddress,
-    inputamount: input_amount,
     uniswapreturn: uniswap_return, 
     kyberexpectedreturn: ker,
     kyberminreturn: kmr,
@@ -99,26 +100,54 @@ async function checkPair(args) {
 let priceMonitor
 let monitoringPrice = false
 
-function comparePrices(exchangePriceA, exchangePriceB, response, exchangeA, exchangeB) {
-  // ExchangePriceB is greater than ExchangePriceA; buy from ExchangePriceA and sell on ExchangePriceB
+async function callFlashLoan(exchangeOne, exchangeTwo, response, amount1) {
   token0 = response[0]["inputTokenAddress"]
   token1 = response[0]["outputTokenAddress"]
   amount0 = web3.utils.toWei(response[0]["inputamount"], 'Ether')
+
+  const account = process.env.KOVAN_TEST_ACCOUNT_ADDRESS
+  var aavev2FlashLoan = new web3.eth.Contract(AaveV2FlashLoan.abi, process.env.AAVE_CONTRACT_KOVAN_ADDRESS)
+  // var uniswapTradeBot = new web3.eth.Contract(UniswapTradeBot.abi, process.env.UNISWAP_CONTRACT_ADDRESS)
+  var nonce = await web3.eth.getTransactionCount(process.env.KOVAN_TEST_ACCOUNT_ADDRESS, 'latest'); // get latest nonce
+  var gasEstimate = await aavev2FlashLoan.methods.myFlashLoanCall(token0, token1, amount0, amount1, exchangeOne, exchangeTwo).estimateGas(); // estimate gas
+  // const gasEstimate = await uniswapTradeBot.methods.startArbitrage(token0, token1, amount0, amount1).call({from: account}).call({from: account}).estimateGas(); // estimate gas TODO: MAKE SURE EXCHANGES FOR SWAPPING ARE RIGHT
+  var gasPrice = await web3.eth.getGasPrice();
+
+  // Create the transaction
+  const tx = {
+    'from': account,
+    'to':  process.env.AAVE_CONTRACT_KOVAN_ADDRESS,
+    'nonce': nonce,
+    'gas': gasEstimate, 
+    'maxFeePerGas': 1000000108,
+    'data': aavev2FlashLoan.methods.myFlashLoanCall(token0, token1, amount0, amount1, exchangeOne, exchangeTwo).send({from: accounts})
+  };
+
+  // Sign the transaction
+    const signPromise = web3.eth.accounts.signTransaction(tx, process.env.KOVAN_TEST_ACCOUNT_PRIVATE_KEY);
+    signPromise.then((signedTx) => {
+      web3.eth.sendSignedTransaction(signedTx.rawTransaction, function(err, hash) {
+        if (!err) {
+          console.log("The hash of your transaction is: ", hash, "\n Check Alchemy's Mempool to view the status of your transaction!");
+        } else {
+          console.log("Something went wrong when submitting your transaction:", err)
+        }
+      });
+    }).catch((err) => {
+      console.log("Promise failed:", err);
+    });
+
+}
+
+function comparePrices(exchangePriceA, exchangePriceB, response, exchangeA, exchangeB) {
+  // ExchangePriceB is greater than ExchangePriceA; buy from ExchangePriceA and sell on ExchangePriceB
   if (exchangePriceA < exchangePriceB) {
-    const account = process.env.BOTACCOUNT_ADDRESS 
-    var aavev2FlashLoan = new web3.eth.Contract(AaveV2FlashLoan.abi, process.env.AAVE_CONTRACT_ADDRESS)
     amount1 = web3.utils.toWei(response[0]["kyberexpectedreturn"], 'Ether') // Take the higher amount of the compared exchanges
-    // var uniswapTradeBot = new web3.eth.Contract(UniswapTradeBot.abi, process.env.UNISWAP_CONTRACT_ADDRESS)
-    aavev2FlashLoan.methods.myFlashLoanCall(token0, token1, amount0, amount1, exchangeB, exchangeA).call({from: account}).then(console.log);
-    // uniswapTradeBot.methods.startArbitrage(token0, token1, amount0, amount1).call({from: accounts[0]})
+    callFlashLoan(exchangeB, exchangeA, response, amount1)
     console.log("exchangePriceA < exchangePriceB. Buying from A and Selling on B")
   } else if(exchangePriceA > exchangePriceB) { // ExchangePriceA price is greater than ExchangePriceB; buy from ExchangePriceB and sell on ExchangePriceA
-    const account = process.env.BOTACCOUNT_ADDRESS 
-    var aavev2FlashLoan = new web3.eth.Contract(AaveV2FlashLoan.abi, process.env.AAVE_CONTRACT_ADDRESS)
     amount1 = web3.utils.toWei(response[0]["uniswapreturn"], 'Ether')  // Take the higher amount of the compared exchanges
-    // var uniswapTradeBot = new web3.eth.Contract(UniswapTradeBot.abi, process.env.UNISWAP_CONTRACT_ADDRESS)
-    aavev2FlashLoan.methods.myFlashLoanCall(token0, token1, amount0, amount1, exchangeA, exchangeB).call({from: account}).then(console.log);
-    // uniswapTradeBot.methods.startArbitrage(token0, token1, amount0, amount1).call({from: accounts[0]})
+    callFlashLoan(exchangeA, exchangeB, response, amount1)
     console.log("exchangePriceA > exchangePriceB. Buying from B and Selling on A")
   }
   // csvWriter.writeRecords(response).then(() => { console.log('Written to excel file.');});
@@ -143,7 +172,7 @@ async function monitorPrice() {
       inputTokenAddress: WETH_ADDRESS,
       outputTokenSymbol: 'BAT',
       outputTokenAddress: legos.erc20.bat.address,
-      inputAmount: web3.utils.toWei('1', 'ETHER')
+      inputAmount: web3.utils.toWei('0.0001', 'ETHER')
     }).then(function(response) {
       comparePrices(response[0]["uniswapreturn"], response[0]["kyberexpectedreturn"], response, SUSHISWAP, KYBER)
     })
@@ -153,7 +182,7 @@ async function monitorPrice() {
       inputTokenAddress: WETH_ADDRESS,
       outputTokenSymbol: 'DAI',
       outputTokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
-      inputAmount: web3.utils.toWei('1', 'ETHER')
+      inputAmount: web3.utils.toWei('0.0001', 'ETHER')
     }).then(function(response) {
       comparePrices(response[0]["uniswapreturn"], response[0]["kyberexpectedreturn"], response, SUSHISWAP, KYBER)
     })
@@ -163,7 +192,7 @@ async function monitorPrice() {
       inputTokenAddress: WETH_ADDRESS,
       outputTokenSymbol: 'KNC',
       outputTokenAddress: '0xdeFA4e8a7bcBA345F687a2f1456F5Edd9CE97202',
-      inputAmount: web3.utils.toWei('1', 'ETHER')
+      inputAmount: web3.utils.toWei('0.0001', 'ETHER')
     }).then(function(response) {
       comparePrices(response[0]["uniswapreturn"], response[0]["kyberexpectedreturn"], response, SUSHISWAP, KYBER)
     })
@@ -173,12 +202,12 @@ async function monitorPrice() {
       inputTokenAddress: WETH_ADDRESS,
       outputTokenSymbol: 'LINK',
       outputTokenAddress: '0x514910771af9ca656af840dff83e8264ecf986ca',
-      inputAmount: web3.utils.toWei('1', 'ETHER')
+      inputAmount: web3.utils.toWei('0.0001', 'ETHER')
     }).then(function(response) {
       comparePrices(response[0]["uniswapreturn"], response[0]["kyberexpectedreturn"], response, SUSHISWAP, KYBER)
     })
 
-  } catch (error) { // If there's an error, we break out of the loop with clearInterval
+  } catch (error) {  // If there's an error, we break out of the loop with clearInterval
     console.error(error)
     monitoringPrice = false
     clearInterval(priceMonitor)
