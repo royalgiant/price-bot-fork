@@ -8,6 +8,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import '../interfaces/IUniswapV2Router02.sol';
 import "./Withdrawable.sol";
 import "./NetworkFeesAndConfigs.sol";
+import "hardhat/console.sol";
 
 // Kyber Mainnet Address: 0x9aab3f75489902f3a48495025729a0af77d4b11e
 interface KyberNetworkProxy {
@@ -26,7 +27,7 @@ contract AaveV2FlashLoan is FlashLoanReceiverBase, Withdrawable {
     uint private asset0Received;
     mapping(string => uint) public amountsArray;
    
-    constructor(address _kyberRouter, address _sushiRouter, address _uniRouterV2, address address provider) public FlashLoanReceiverBase(provider) {
+    constructor(address _kyberRouter, address _sushiRouter, address _uniRouterV2, address provider) public FlashLoanReceiverBase(provider) {
         kyberRouter = KyberNetworkProxy(_kyberRouter);
         sushiRouter = IUniswapV2Router02(_sushiRouter);
         uniRouterV2 = IUniswapV2Router02(_uniRouterV2);
