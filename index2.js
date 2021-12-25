@@ -6,6 +6,7 @@ require('dotenv').config()
 //http dependencies
 const express = require('express')
 const bodyParser = require('body-parser')
+const hre = require("hardhat")
 const http = require('http')
 const Web3 = require('web3')
 const HDWalletProvider = require('@truffle/hdwallet-provider')
@@ -42,7 +43,7 @@ const server = http.createServer(app).listen(PORT, () => console.log(`Listening 
 
 // Web3 CONFIG
 const { createAlchemyWeb3 } = require("@alch/alchemy-web3");
-const web3 = createAlchemyWeb3(process.env.ALCHEMY_RPC_URL)
+const web3 = createAlchemyWeb3(process.env.ALCHEMY_RPC_URL, {writeProvider: hre.network.provider});
 
 // Exchanges
 UNISWAP = "uniswap"
@@ -75,15 +76,15 @@ async function checkPair(args) {
 
   // calculate uniswap amount
   const path = [inputTokenAddress, outputTokenAddress];
-  const amounts = await uniswapV2.methods.getAmountsOut(inputAmount, path).call();
+  const amounts = await uniswapV2.methods.getAmountsOut(inputAmount, path).call({}, process.env.BLOCK_NUMBER); // GET RID OF PARAMS IN CALL FOR MAINNET
   const uniswapAmount = amounts[1];
 
   // calculate sushiswap amount
-  const sushi_amounts = await sushiswapV2.methods.getAmountsOut(inputAmount, path).call();
+  const sushi_amounts = await sushiswapV2.methods.getAmountsOut(inputAmount, path).call({}, process.env.BLOCK_NUMBER); // GET RID OF PARAMS IN CALL FOR MAINNET
   const sushiAmount = sushi_amounts[1];
 
   // calculate kyber amount
-  const { expectedRate, slippageRate } = await kyber.methods.getExpectedRate(inputTokenAddress, outputTokenAddress, inputAmount).call();
+  const { expectedRate, slippageRate } = await kyber.methods.getExpectedRate(inputTokenAddress, outputTokenAddress, inputAmount).call({}, process.env.BLOCK_NUMBER); // GET RID OF PARAMS IN CALL FOR MAINNET
   const kyberExpectedAmount = calcDstQty(inputAmount, inputTokenDecimals, outputTokenDecimals, expectedRate) // Use Tokens that have 18 token decimals
   const kyberSlippageAmount = calcDstQty(inputAmount, inputTokenDecimals, outputTokenDecimals, slippageRate) // Use Tokens that have 18 token decimals;
   var input_amount = web3.utils.fromWei(inputAmount, 'Ether')
@@ -128,38 +129,8 @@ async function callFlashLoan(exchangeOne, exchangeTwo, response, amount1) {
   token0 = response[0]["inputTokenAddress"]
   token1 = response[0]["outputTokenAddress"]
   amount0 = web3.utils.toWei(response[0]["inputamount"], 'Ether')
-
-  const account = process.env.BOTACCOUNT_ADDRESS
   var aavev2FlashLoan = new web3.eth.Contract(AaveV2FlashLoan.abi, process.env.AAVE_CONTRACT_MAINFORK_ADDRESS)
-  // var uniswapTradeBot = new web3.eth.Contract(UniswapTradeBot.abi, process.env.UNISWAP_CONTRACT_ADDRESS)
-  var nonce = await web3.eth.getTransactionCount(process.env.BOTACCOUNT_ADDRESS, 'latest'); // get latest nonce
-  var gasEstimate = await aavev2FlashLoan.methods.myFlashLoanCall(token0, token1, amount0, amount1, exchangeOne, exchangeTwo).estimateGas(); // estimate gas
-  // const gasEstimate = await uniswapTradeBot.methods.startArbitrage(token0, token1, amount0, amount1).call({from: account}).call({from: account}).estimateGas(); // estimate gas TODO: MAKE SURE EXCHANGES FOR SWAPPING ARE RIGHT
-  var gasPrice = await web3.eth.getGasPrice();
-
-  // Create the transaction
-  const tx = {
-    'from': account,
-    'to':  process.env.AAVE_CONTRACT_MAINFORK_ADDRESS,
-    'nonce': nonce,
-    'gas': gasEstimate, 
-    'maxFeePerGas': 194000000000,
-    'data': aavev2FlashLoan.methods.myFlashLoanCall(token0, token1, amount0, amount1, exchangeOne, exchangeTwo).encodeABI()
-  };
-
-  // Sign the transaction
-  const signPromise = web3.eth.accounts.signTransaction(tx, process.env.BOTACCOUNT_PRIVATE_KEY);
-  signPromise.then((signedTx) => {
-    web3.eth.sendSignedTransaction(signedTx.rawTransaction, function(err, hash) {
-      if (!err) {
-        console.log("The hash of your transaction is: ", hash, "\n Check Alchemy's Mempool to view the status of your transaction!");
-      } else {
-        console.log("Something went wrong when submitting your transaction:", err)
-      }
-    });
-  }).catch((err) => {
-    console.log("Promise failed:", err);
-  });
+  aavev2FlashLoan.methods.myFlashLoanCall(token0, token1, amount0, amount1, exchangeOne, exchangeTwo).call({ from: process.env.BOTACCOUNT_ADDRESS}, process.env.BLOCK_NUMBER) // TAKE OUT THE BLOCK_NUMBER PARAM WHEN RUNNING LIVE
   await delay(30000)
 }
 
@@ -222,17 +193,17 @@ async function monitorPrice() {
 
     // Production Level Pairs, Make Sure Tokens Exists in the Contract
 
-    await checkPair({
-      inputTokenSymbol: 'WETH',
-      inputTokenAddress: WETH_ADDRESS,
-      outputTokenSymbol: 'DAI',
-      outputTokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
-      inputTokenDecimals: 18,
-      outputTokenDecimals: 18,
-      inputAmount: web3.utils.toWei('0.01', 'ETHER')
-    }).then(function(response) {
-      comparePrices(response[0]["uniswapreturn"], response[0]["kyberexpectedreturn"], response, SUSHISWAP, KYBER)
-    })
+    // await checkPair({
+    //   inputTokenSymbol: 'WETH',
+    //   inputTokenAddress: WETH_ADDRESS,
+    //   outputTokenSymbol: 'DAI',
+    //   outputTokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
+    //   inputTokenDecimals: 18,
+    //   outputTokenDecimals: 18,
+    //   inputAmount: web3.utils.toWei('0.01', 'ETHER')
+    // }).then(function(response) {
+    //   comparePrices(response[0]["uniswapreturn"], response[0]["kyberexpectedreturn"], response, SUSHISWAP, KYBER)
+    // })
 
     await checkPair({
       inputTokenSymbol: 'WETH',
@@ -246,29 +217,29 @@ async function monitorPrice() {
       comparePrices(response[0]["uniswapreturn"], response[0]["kyberexpectedreturn"], response, SUSHISWAP, KYBER)
     })
 
-    await checkPair({
-      inputTokenSymbol: 'WETH',
-      inputTokenAddress: WETH_ADDRESS,
-      outputTokenSymbol: 'DAI',
-      outputTokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
-      inputAmount: web3.utils.toWei('0.01', 'ETHER'),
-      inputTokenDecimals: 18,
-      outputTokenDecimals: 18
-    }).then(function(response) {
-      comparePrices(response[0]["uniswapreturn"], response[0]["sushiswapreturn"], response, UNISWAP, SUSHISWAP)
-    })
+    // await checkPair({
+    //   inputTokenSymbol: 'WETH',
+    //   inputTokenAddress: WETH_ADDRESS,
+    //   outputTokenSymbol: 'DAI',
+    //   outputTokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
+    //   inputAmount: web3.utils.toWei('0.01', 'ETHER'),
+    //   inputTokenDecimals: 18,
+    //   outputTokenDecimals: 18
+    // }).then(function(response) {
+    //   comparePrices(response[0]["uniswapreturn"], response[0]["sushiswapreturn"], response, UNISWAP, SUSHISWAP)
+    // })
 
-    await checkPair({
-      inputTokenSymbol: 'WETH',
-      inputTokenAddress: WETH_ADDRESS,
-      outputTokenSymbol: 'LINK',
-      inputTokenDecimals: 18,
-      outputTokenDecimals: 18,
-      outputTokenAddress: '0x514910771af9ca656af840dff83e8264ecf986ca',
-      inputAmount: web3.utils.toWei('0.01', 'ETHER')
-    }).then(function(response) {
-      comparePrices(response[0]["uniswapreturn"], response[0]["sushiswapreturn"], response, UNISWAP, SUSHISWAP)
-    })
+    // await checkPair({
+    //   inputTokenSymbol: 'WETH',
+    //   inputTokenAddress: WETH_ADDRESS,
+    //   outputTokenSymbol: 'LINK',
+    //   inputTokenDecimals: 18,
+    //   outputTokenDecimals: 18,
+    //   outputTokenAddress: '0x514910771af9ca656af840dff83e8264ecf986ca',
+    //   inputAmount: web3.utils.toWei('0.01', 'ETHER')
+    // }).then(function(response) {
+    //   comparePrices(response[0]["uniswapreturn"], response[0]["sushiswapreturn"], response, UNISWAP, SUSHISWAP)
+    // })
 
   } catch (error) {  // If there's an error, we break out of the loop with clearInterval
     console.error(error)
